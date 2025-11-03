@@ -13,4 +13,5 @@ model User {
 
   // Relations
   files        File[]
+  folders      Folder[]
 }

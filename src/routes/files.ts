@@ -21,6 +21,12 @@ export default async function fileRoutes(fastify: FastifyInstance) {
           "Upload one or more image files (JPEG, PNG, GIF, WebP, SVG, BMP, TIFF, HEIC, HEIF)",
         security: [{ bearerAuth: [] }],
         consumes: ["multipart/form-data"],
+        querystring: {
+          type: "object",
+          properties: {
+            folderId: { type: "string" },
+          },
+        },
         response: {
           201: {
             type: "object",
@@ -45,6 +51,18 @@ export default async function fileRoutes(fastify: FastifyInstance) {
     async (request: any, reply: FastifyReply) => {
       try {
         const userId = request.user.id;
+        const { folderId } = request.query;
+
+        // Validate folder if provided
+        if (folderId) {
+          const folder = await prisma.folder.findFirst({
+            where: { id: folderId, userId, isDeleted: false },
+          });
+
+          if (!folder) {
+            return reply.status(404).send({ error: "Folder not found" });
+          }
+        }
 
         // Get user to check quota
         const user = await prisma.user.findUnique({
@@ -116,6 +134,7 @@ export default async function fileRoutes(fastify: FastifyInstance) {
                 s3Key,
                 s3Bucket: process.env.S3_BUCKET || "cubby-files",
                 userId,
+                folderId: folderId || null,
               },
             });
 

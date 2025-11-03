@@ -17,9 +17,13 @@ model File {
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  folderId     String?
+  folder       Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@index([userId])
   @@index([s3Key])
+  @@index([folderId])
 }

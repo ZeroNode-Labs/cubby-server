@@ -79,19 +79,22 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // Create user
+  // Create user (deprecated - use /api/auth/register instead)
+  // This endpoint is kept for backward compatibility but requires password
   fastify.post(
     "/",
     {
       schema: {
         tags: ["users"],
-        description: "Create a new user",
+        description: "Create a new user (deprecated - use /api/auth/register)",
+        deprecated: true,
         body: {
           type: "object",
-          required: ["email"],
+          required: ["email", "password"],
           properties: {
             email: { type: "string", format: "email" },
             name: { type: "string" },
+            password: { type: "string", minLength: 6 },
           },
         },
         response: {
@@ -101,16 +104,22 @@ export default async function userRoutes(fastify: FastifyInstance) {
       },
     },
     async (
-      request: FastifyRequest<{ Body: { email: string; name?: string } }>,
+      request: FastifyRequest<{
+        Body: { email: string; name?: string; password: string };
+      }>,
       reply: FastifyReply
     ) => {
-      const { email, name } = request.body;
+      const { email, name, password } = request.body;
 
       try {
+        const bcrypt = await import("bcrypt");
+        const hashedPassword = await bcrypt.hash(password, 10);
+
         const user = await prisma.user.create({
           data: {
             email,
             name,
+            password: hashedPassword,
           },
         });
         return reply.status(201).send(user);

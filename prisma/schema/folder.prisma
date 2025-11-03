@@ -1,0 +1,29 @@
+// Folder model
+model Folder {
+  id        String   @id @default(cuid())
+  name      String
+  path      String   // Full path like /Documents/Projects
+
+  // Parent-child relationship
+  parentId  String?
+  parent    Folder?  @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[] @relation("FolderHierarchy")
+
+  // Owner
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Files in this folder
+  files     File[]
+
+  // Metadata
+  isDeleted Boolean  @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, path]) // Each user can't have duplicate paths
+  @@index([userId])
+  @@index([parentId])
+}

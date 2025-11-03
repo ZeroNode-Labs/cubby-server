@@ -59,6 +59,7 @@ await fastify.register(swagger, {
       { name: "auth", description: "Authentication endpoints" },
       { name: "users", description: "User management endpoints" },
       { name: "files", description: "File management endpoints" },
+      { name: "folders", description: "Folder management endpoints" },
       { name: "health", description: "Health check endpoints" },
     ],
     components: {
@@ -115,11 +116,13 @@ fastify.get(
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/users.js";
 import fileRoutes from "./routes/files.js";
+import folderRoutes from "./routes/folders.js";
 
 // Register routes
 await fastify.register(authRoutes, { prefix: "/api/auth" });
 await fastify.register(userRoutes, { prefix: "/api/users" });
 await fastify.register(fileRoutes, { prefix: "/api/files" });
+await fastify.register(folderRoutes, { prefix: "/api/folders" });
 
 const start = async () => {
   try {
