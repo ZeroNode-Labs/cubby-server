@@ -1,5 +1,12 @@
 import { FastifyInstance, FastifyReply } from "fastify";
 import { prisma } from "../lib/prisma.js";
+import {
+  parsePaginationParams,
+  getPrismaOffsetLimit,
+  buildPaginatedResponse,
+  paginationQuerySchema,
+  paginationResponseSchema,
+} from "../utils/pagination.js";
 
 export default async function folderRoutes(fastify: FastifyInstance) {
   // Create folder
@@ -100,19 +107,23 @@ export default async function folderRoutes(fastify: FastifyInstance) {
       onRequest: [fastify.authenticate],
       schema: {
         tags: ["folders"],
-        description: "List folders",
+        description: "List folders (paginated)",
         security: [{ bearerAuth: [] }],
         querystring: {
           type: "object",
           properties: {
-            parentId: { type: "string" },
+            ...paginationQuerySchema.properties,
+            parentId: {
+              type: "string",
+              description: "Filter by parent folder ID",
+            },
           },
         },
         response: {
           200: {
             type: "object",
             properties: {
-              folders: {
+              data: {
                 type: "array",
                 items: {
                   type: "object",
@@ -126,6 +137,7 @@ export default async function folderRoutes(fastify: FastifyInstance) {
                   },
                 },
               },
+              pagination: paginationResponseSchema,
             },
           },
         },
@@ -133,34 +145,45 @@ export default async function folderRoutes(fastify: FastifyInstance) {
     },
     async (request: any, reply: FastifyReply) => {
       const userId = request.user.id;
-      const { parentId } = request.query;
+      const { parentId, ...query } = request.query;
+      const paginationOpts = parsePaginationParams(query);
+      const { skip, take } = getPrismaOffsetLimit(paginationOpts);
 
-      const folders = await prisma.folder.findMany({
-        where: {
-          userId,
-          isDeleted: false,
-          parentId: parentId || null,
-        },
-        include: {
-          _count: {
-            select: { files: true },
+      const where = {
+        userId,
+        isDeleted: false,
+        parentId: parentId || null,
+      };
+
+      const [folders, total] = await Promise.all([
+        prisma.folder.findMany({
+          where,
+          include: {
+            _count: {
+              select: { files: true },
+            },
           },
-        },
-        orderBy: {
-          name: "asc",
-        },
-      });
+          orderBy: {
+            name: "asc",
+          },
+          skip,
+          take,
+        }),
+        prisma.folder.count({ where }),
+      ]);
 
-      return reply.send({
-        folders: folders.map((f) => ({
-          id: f.id,
-          name: f.name,
-          path: f.path,
-          parentId: f.parentId,
-          fileCount: f._count.files,
-          createdAt: f.createdAt,
-        })),
-      });
+      const foldersData = folders.map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        path: f.path,
+        parentId: f.parentId,
+        fileCount: f._count.files,
+        createdAt: f.createdAt,
+      }));
+
+      return reply.send(
+        buildPaginatedResponse(foldersData, total, paginationOpts)
+      );
     }
   );
 
@@ -171,7 +194,7 @@ export default async function folderRoutes(fastify: FastifyInstance) {
       onRequest: [fastify.authenticate],
       schema: {
         tags: ["folders"],
-        description: "Get folder contents (subfolders and files)",
+        description: "Get folder contents (subfolders and files, paginated)",
         security: [{ bearerAuth: [] }],
         params: {
           type: "object",
@@ -179,6 +202,7 @@ export default async function folderRoutes(fastify: FastifyInstance) {
             id: { type: "string" },
           },
         },
+        querystring: paginationQuerySchema,
         response: {
           200: {
             type: "object",
@@ -192,26 +216,40 @@ export default async function folderRoutes(fastify: FastifyInstance) {
                 },
               },
               subfolders: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    id: { type: "string" },
-                    name: { type: "string" },
-                    fileCount: { type: "number" },
+                type: "object",
+                properties: {
+                  data: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        id: { type: "string" },
+                        name: { type: "string" },
+                        fileCount: { type: "number" },
+                        createdAt: { type: "string" },
+                      },
+                    },
                   },
+                  pagination: paginationResponseSchema,
                 },
               },
               files: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    id: { type: "string" },
-                    filename: { type: "string" },
-                    size: { type: "number" },
-                    mimeType: { type: "string" },
+                type: "object",
+                properties: {
+                  data: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        id: { type: "string" },
+                        filename: { type: "string" },
+                        size: { type: "number" },
+                        mimeType: { type: "string" },
+                        createdAt: { type: "string" },
+                      },
+                    },
                   },
+                  pagination: paginationResponseSchema,
                 },
               },
             },
@@ -222,6 +260,8 @@ export default async function folderRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const userId = (request as any).user.id;
       const { id } = request.params;
+      const paginationOpts = parsePaginationParams((request as any).query);
+      const { skip, take } = getPrismaOffsetLimit(paginationOpts);
 
       const folder = await prisma.folder.findFirst({
         where: {
@@ -229,17 +269,31 @@ export default async function folderRoutes(fastify: FastifyInstance) {
           userId,
           isDeleted: false,
         },
-        include: {
-          children: {
-            where: { isDeleted: false },
+      });
+
+      if (!folder) {
+        return reply.status(404).send({ error: "Folder not found" });
+      }
+
+      const subfoldersWhere = { parentId: id, isDeleted: false };
+      const filesWhere = { folderId: id, isDeleted: false };
+
+      const [subfolders, subfoldersTotal, files, filesTotal] =
+        await Promise.all([
+          prisma.folder.findMany({
+            where: subfoldersWhere,
             include: {
               _count: {
                 select: { files: true },
               },
             },
-          },
-          files: {
-            where: { isDeleted: false },
+            orderBy: { name: "asc" },
+            skip,
+            take,
+          }),
+          prisma.folder.count({ where: subfoldersWhere }),
+          prisma.file.findMany({
+            where: filesWhere,
             select: {
               id: true,
               filename: true,
@@ -247,13 +301,27 @@ export default async function folderRoutes(fastify: FastifyInstance) {
               mimeType: true,
               createdAt: true,
             },
-          },
-        },
-      });
+            orderBy: { createdAt: "desc" },
+            skip,
+            take,
+          }),
+          prisma.file.count({ where: filesWhere }),
+        ]);
 
-      if (!folder) {
-        return reply.status(404).send({ error: "Folder not found" });
-      }
+      const subfoldersData = subfolders.map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        fileCount: f._count.files,
+        createdAt: f.createdAt,
+      }));
+
+      const filesData = files.map((f: any) => ({
+        id: f.id,
+        filename: f.filename,
+        size: Number(f.size),
+        mimeType: f.mimeType,
+        createdAt: f.createdAt,
+      }));
 
       return reply.send({
         folder: {
@@ -261,18 +329,12 @@ export default async function folderRoutes(fastify: FastifyInstance) {
           name: folder.name,
           path: folder.path,
         },
-        subfolders: folder.children.map((f) => ({
-          id: f.id,
-          name: f.name,
-          fileCount: f._count.files,
-        })),
-        files: folder.files.map((f) => ({
-          id: f.id,
-          filename: f.filename,
-          size: Number(f.size),
-          mimeType: f.mimeType,
-          createdAt: f.createdAt,
-        })),
+        subfolders: buildPaginatedResponse(
+          subfoldersData,
+          subfoldersTotal,
+          paginationOpts
+        ),
+        files: buildPaginatedResponse(filesData, filesTotal, paginationOpts),
       });
     }
   );

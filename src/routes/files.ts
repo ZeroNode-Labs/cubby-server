@@ -8,6 +8,13 @@ import {
   isAllowedMimeType,
   getAllowedTypesMessage,
 } from "../config/mime-types.js";
+import {
+  parsePaginationParams,
+  getPrismaOffsetLimit,
+  buildPaginatedResponse,
+  paginationQuerySchema,
+  paginationResponseSchema,
+} from "../utils/pagination.js";
 
 export default async function fileRoutes(fastify: FastifyInstance) {
   // Upload file(s)
@@ -172,13 +179,20 @@ export default async function fileRoutes(fastify: FastifyInstance) {
       onRequest: [fastify.authenticate],
       schema: {
         tags: ["files"],
-        description: "List all files for the current user",
+        description: "List all files for the current user (paginated)",
         security: [{ bearerAuth: [] }],
+        querystring: {
+          type: "object",
+          properties: {
+            ...paginationQuerySchema.properties,
+            folderId: { type: "string", description: "Filter by folder ID" },
+          },
+        },
         response: {
           200: {
             type: "object",
             properties: {
-              files: {
+              data: {
                 type: "array",
                 items: {
                   type: "object",
@@ -187,11 +201,12 @@ export default async function fileRoutes(fastify: FastifyInstance) {
                     filename: { type: "string" },
                     mimeType: { type: "string" },
                     size: { type: "number" },
+                    folderId: { type: "string", nullable: true },
                     createdAt: { type: "string" },
                   },
                 },
               },
-              total: { type: "number" },
+              pagination: paginationResponseSchema,
             },
           },
         },
@@ -199,31 +214,44 @@ export default async function fileRoutes(fastify: FastifyInstance) {
     },
     async (request: any, reply: FastifyReply) => {
       const userId = request.user.id;
+      const { folderId, ...query } = request.query;
+      const paginationOpts = parsePaginationParams(query);
+      const { skip, take } = getPrismaOffsetLimit(paginationOpts);
 
-      const files = await prisma.file.findMany({
-        where: {
-          userId,
-          isDeleted: false,
-        },
-        select: {
-          id: true,
-          filename: true,
-          mimeType: true,
-          size: true,
-          createdAt: true,
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-      });
+      const where = {
+        userId,
+        isDeleted: false,
+        ...(folderId !== undefined && { folderId: folderId || null }),
+      };
 
-      return reply.send({
-        files: files.map((f: any) => ({
-          ...f,
-          size: Number(f.size),
-        })),
-        total: files.length,
-      });
+      const [files, total] = await Promise.all([
+        prisma.file.findMany({
+          where,
+          select: {
+            id: true,
+            filename: true,
+            mimeType: true,
+            size: true,
+            folderId: true,
+            createdAt: true,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          skip,
+          take,
+        }),
+        prisma.file.count({ where }),
+      ]);
+
+      const filesWithNumbers = files.map((f: any) => ({
+        ...f,
+        size: Number(f.size),
+      }));
+
+      return reply.send(
+        buildPaginatedResponse(filesWithNumbers, total, paginationOpts)
+      );
     }
   );
 
