@@ -1,0 +1,25 @@
+// File model
+model File {
+  id           String   @id @default(cuid())
+  filename     String
+  originalName String
+  mimeType     String
+  size         BigInt
+  s3Key        String   @unique // S3 object key
+  s3Bucket     String   // S3 bucket name
+
+  // Metadata
+  checksum     String?  // MD5 or SHA256
+  isDeleted    Boolean  @default(false)
+  deletedAt    DateTime?
+
+  // Relations
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([s3Key])
+}

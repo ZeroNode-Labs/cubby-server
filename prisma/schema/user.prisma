@@ -1,8 +1,16 @@
 // User model
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  email        String   @unique
+  password     String   // bcrypt hashed
+  name         String?
+  quota        BigInt   @default(5368709120) // 5GB default in bytes
+  usedSpace    BigInt   @default(0)
+  isActive     Boolean  @default(true)
+  emailVerified Boolean @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  files        File[]
 }
