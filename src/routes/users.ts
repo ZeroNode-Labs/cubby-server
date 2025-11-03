@@ -1,16 +1,67 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { prisma } from "../lib/prisma.js";
 
+// Schema definitions
+const userSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    email: { type: "string" },
+    name: { type: "string", nullable: true },
+    createdAt: { type: "string", format: "date-time" },
+    updatedAt: { type: "string", format: "date-time" },
+  },
+};
+
+const errorSchema = {
+  type: "object",
+  properties: {
+    error: { type: "string" },
+  },
+};
+
 export default async function userRoutes(fastify: FastifyInstance) {
   // Get all users
-  fastify.get("/", async () => {
-    const users = await prisma.user.findMany();
-    return users;
-  });
+  fastify.get(
+    "/",
+    {
+      schema: {
+        tags: ["users"],
+        description: "Get all users",
+        response: {
+          200: {
+            type: "array",
+            items: userSchema,
+          },
+        },
+      },
+    },
+    async () => {
+      const users = await prisma.user.findMany();
+      return users;
+    }
+  );
 
   // Get user by ID
   fastify.get(
     "/:id",
+    {
+      schema: {
+        tags: ["users"],
+        description: "Get a user by ID",
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+          },
+          required: ["id"],
+        },
+        response: {
+          200: userSchema,
+          404: errorSchema,
+        },
+      },
+    },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply
@@ -31,6 +82,24 @@ export default async function userRoutes(fastify: FastifyInstance) {
   // Create user
   fastify.post(
     "/",
+    {
+      schema: {
+        tags: ["users"],
+        description: "Create a new user",
+        body: {
+          type: "object",
+          required: ["email"],
+          properties: {
+            email: { type: "string", format: "email" },
+            name: { type: "string" },
+          },
+        },
+        response: {
+          201: userSchema,
+          400: errorSchema,
+        },
+      },
+    },
     async (
       request: FastifyRequest<{ Body: { email: string; name?: string } }>,
       reply: FastifyReply
@@ -54,6 +123,30 @@ export default async function userRoutes(fastify: FastifyInstance) {
   // Update user
   fastify.put(
     "/:id",
+    {
+      schema: {
+        tags: ["users"],
+        description: "Update a user",
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+          },
+          required: ["id"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            email: { type: "string", format: "email" },
+            name: { type: "string" },
+          },
+        },
+        response: {
+          200: userSchema,
+          404: errorSchema,
+        },
+      },
+    },
     async (
       request: FastifyRequest<{
         Params: { id: string };
@@ -82,6 +175,26 @@ export default async function userRoutes(fastify: FastifyInstance) {
   // Delete user
   fastify.delete(
     "/:id",
+    {
+      schema: {
+        tags: ["users"],
+        description: "Delete a user",
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+          },
+          required: ["id"],
+        },
+        response: {
+          204: {
+            type: "null",
+            description: "No content",
+          },
+          404: errorSchema,
+        },
+      },
+    },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply

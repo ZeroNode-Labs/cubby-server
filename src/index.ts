@@ -1,5 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import swagger from "@fastify/swagger";
+import swaggerUI from "@fastify/swagger-ui";
 import "dotenv/config";
 
 const fastify = Fastify({
@@ -14,15 +16,64 @@ const fastify = Fastify({
   },
 });
 
+// Register Swagger
+await fastify.register(swagger, {
+  openapi: {
+    info: {
+      title: "Cubby Server API",
+      description: "API documentation for Cubby Server",
+      version: "1.0.0",
+    },
+    servers: [
+      {
+        url: "http://localhost:3000",
+        description: "Development server",
+      },
+    ],
+    tags: [
+      { name: "users", description: "User related endpoints" },
+      { name: "health", description: "Health check endpoints" },
+    ],
+  },
+});
+
+// Register Swagger UI
+await fastify.register(swaggerUI, {
+  routePrefix: "/docs",
+  uiConfig: {
+    docExpansion: "list",
+    deepLinking: false,
+  },
+  staticCSP: true,
+});
+
 // Register CORS
 await fastify.register(cors, {
   origin: true, // Configure this based on your needs
 });
 
 // Health check route
-fastify.get("/health", async () => {
-  return { status: "ok", timestamp: new Date().toISOString() };
-});
+fastify.get(
+  "/health",
+  {
+    schema: {
+      tags: ["health"],
+      description: "Health check endpoint",
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            status: { type: "string" },
+            timestamp: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  async () => {
+    return { status: "ok", timestamp: new Date().toISOString() };
+  }
+);
 
 // Import routes
 import userRoutes from "./routes/users.js";
